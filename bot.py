@@ -37,7 +37,7 @@ API_1_HEADERS = {
 }
 
 API_1_PAYLOAD = {
-    "token": "eyJhbGciOiJIUzI1NiJ9.eyJhcGlfa2V5X2lkIjoiOGM5YjcyNGYtZjY5NS00MDYxLTgxNmMtOTZjNjJmNmQ1NjNkIiwiY3VzdG9tZXJfb2lkIjoiY3VzX1STRUHVDN3ZqM3l0TWw0IiwiZXhwIjoxNzcwMjIyMjk5fQ.CcXC9IIpVzZ37lQCT-E4B0HNRMO1RwMqu6kdU-t7dx0"
+    "token": "eyJhbGciOiJIUzI1NiJ9.eyJhcGlfa2V5X2lkIjoiOGM5YjcyNGYtZjY5NS00MDYxLTgxNmMtOTZjNjJmNmQ1NjNkIiwiY3VzdG9tZXJfb2lkIjoiY3VzX1RTUHVDN3ZqM3l0TWw0IiwiZXhwIjoxNzcwMjIyMjk5fQ.CcXC9IIpVzZ37lQCT-E4B0HNRMO1RwMqu6kdU-t7dx0"
 }
 
 API_2_HEADERS = {
@@ -120,7 +120,7 @@ def process_card(card_details, user_info):
     
     # API 2 payload
     payload = {
-        'return_url': "https://brainfm.baremetrics.com/?token=eyJhbGciOiJIUzI1NiJ9.eyJhcGlfa2V5X2lkIjoiOGM5YjcyNGYtZjY5NS00MDYxLTgxNmMtOTZjNjJmNmQ1NjNkIiwiY3VzdG9tZXJfb2lkIjoiY3VzX1STRUHVDN3ZqM3l0TWw0IiwiZXhwIjoxNzcwMjIyMjk5fQ.CcXC9IIpVzZ37lQCT-E4B0HNRMO1RwMqu6kdU-t7dx0",
+        'return_url': "https://brainfm.baremetrics.com/?token=eyJhbGciOiJIUzI1NiJ9.eyJhcGlfa2V5X2lkIjoiOGM5YjcyNGYtZjY5NS00MDYxLTgxNmMtOTZjNjJmNmQ1NjNkIiwiY3VzdG9tZXJfb2lkIjoiY3VzX1RTUHVDN3ZqM3l0TWw0IiwiZXhwIjoxNzcwMjIyMjk5fQ.CcXC9IIpVzZ37lQCT-E4B0HNRMO1RwMqu6kdU-t7dx0",
         'payment_method_data[type]': "card",
         'payment_method_data[card][number]': number,
         'payment_method_data[card][cvc]': cvv,
