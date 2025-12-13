@@ -9,3 +9,4 @@ services:
         value: 8480622059:AAHKRrUQK6Gw0ACZLiBLYwc9Cf9laodogVM
       - key: AUTHOR
         value: "@FAHIM0200"
+    autoDeploy: true
