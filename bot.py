@@ -4,19 +4,21 @@ import requests
 import json
 from datetime import datetime
 from flask import Flask, request
+import threading
 
-# Get environment variables
+# ========== CONFIGURATION ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8480622059:AAHKRrUQK6Gw0ACZLiBLYwc9Cf9laodogVM")
 AUTHOR = os.getenv("AUTHOR", "@FAHIM0200")
+YOUR_RENDER_URL = "https://bot-py-pg6h.onrender.com"  # Your Render URL
 
 # Initialize bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Store current setup intent data
+# Store setup intent data
 current_setup_intent = None
 setup_intent_creation_time = None
 
-# Store API configurations
+# ========== API CONFIGURATION ==========
 API_1_URL = "https://dunning.baremetrics.com/card_updates/stripe_setup_intent"
 API_1_HEADERS = {
     'User-Agent': "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36",
@@ -55,11 +57,12 @@ API_2_HEADERS = {
     'priority': "u=1, i"
 }
 
-# Flask app
+# ========== FLASK APP ==========
 app = Flask(__name__)
 
-# Helper functions (same as before)
+# ========== HELPER FUNCTIONS ==========
 def get_setup_intent():
+    """Get new setup intent from API 1"""
     global current_setup_intent, setup_intent_creation_time
     
     try:
@@ -74,25 +77,25 @@ def get_setup_intent():
             data = response.json()
             current_setup_intent = data['client_secret']
             setup_intent_creation_time = datetime.now()
-            return True, "Setup intent created successfully"
+            return True, "Setup intent created"
         else:
-            return False, f"API 1 failed: {response.status_code} - {response.text}"
+            return False, f"API 1 failed: {response.status_code}"
             
     except Exception as e:
-        return False, f"Error creating setup intent: {str(e)}"
+        return False, f"Error: {str(e)}"
 
 def safe_parse_json(response_text):
+    """Safely parse JSON response"""
     try:
         return json.loads(response_text)
-    except json.JSONDecodeError:
-        if '<html' in response_text.lower() or '<!doctype' in response_text.lower():
-            return {'error': {'message': 'Received HTML response', 'details': response_text[:200] + '...'}}
-        else:
-            return {'error': {'message': 'Invalid JSON response', 'raw_response': response_text[:500]}}
+    except:
+        return {'error': {'message': 'Invalid JSON', 'raw': response_text[:200]}}
 
 def process_card(card_details, user_info):
+    """Process a single card through both APIs"""
     global current_setup_intent
     
+    # Parse card
     try:
         number, month, year, cvv = card_details.split('|')
         number = number.strip().replace(" ", "")
@@ -103,17 +106,19 @@ def process_card(card_details, user_info):
     except:
         return False, "❌ Invalid format. Use: /p 4242424242424242|01|26|000"
     
+    # Get setup intent if needed
     if not current_setup_intent:
         success, message = get_setup_intent()
         if not success:
-            return False, f"❌ Failed to get setup intent: {message}"
+            return False, f"❌ Setup intent failed: {message}"
     
+    # Extract setup ID
     try:
         setup_id = current_setup_intent.split('_secret_')[0]
     except:
-        return False, "❌ Invalid setup intent format"
+        return False, "❌ Invalid setup intent"
     
-    # API 2 payload (same as before)
+    # API 2 payload
     payload = {
         'return_url': "https://brainfm.baremetrics.com/?token=eyJhbGciOiJIUzI1NiJ9.eyJhcGlfa2V5X2lkIjoiOGM5YjcyNGYtZjY5NS00MDYxLTgxNmMtOTZjNjJmNmQ1NjNkIiwiY3VzdG9tZXJfb2lkIjoiY3VzX1STRUHVDN3ZqM3l0TWw0IiwiZXhwIjoxNzcwMjIyMjk5fQ.CcXC9IIpVzZ37lQCT-E4B0HNRMO1RwMqu6kdU-t7dx0",
         'payment_method_data[type]': "card",
@@ -154,6 +159,7 @@ def process_card(card_details, user_info):
         'client_secret': current_setup_intent
     }
     
+    # Call API 2
     api2_url = f"https://api.stripe.com/v1/setup_intents/{setup_id}/confirm"
     
     try:
@@ -166,6 +172,7 @@ def process_card(card_details, user_info):
         
         response_data = safe_parse_json(response.text)
         
+        # Handle setup intent errors
         if isinstance(response_data, dict) and 'error' in response_data:
             error_code = response_data['error'].get('code', '')
             
@@ -179,152 +186,228 @@ def process_card(card_details, user_info):
                     response = requests.post(api2_url, data=payload, headers=API_2_HEADERS, timeout=30)
                     response_data = safe_parse_json(response.text)
                 else:
-                    return False, f"❌ Setup intent failed and couldn't get new one: {message}"
+                    return False, f"❌ Setup intent failed: {message}"
         
+        # Parse response
         if isinstance(response_data, dict) and 'error' in response_data:
+            # Card declined
             error_data = response_data.get('error', {})
+            decline_code = error_data.get('decline_code', 'unknown') if isinstance(error_data, dict) else 'unknown'
+            error_message = error_data.get('message', 'Unknown error') if isinstance(error_data, dict) else str(error_data)
             
-            if isinstance(error_data, dict):
-                decline_code = error_data.get('decline_code', 'unknown')
-                error_message = error_data.get('message', 'Unknown error')
-            else:
-                decline_code = 'unknown'
-                error_message = str(error_data)
+            result = f"""❌ *DECLINED*
+
+*Card:* `{display_card}`
+*Decline Code:* `{decline_code}`
+*Message:* {error_message}
+
+*User:* {user_info}
+*Author:* {AUTHOR}
+*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+━━━━━━━━━━━━━━━━━━━━━━"""
             
-            result_text = f"❌ *DECLINED*\n\n"
-            result_text += f"*Card:* `{display_card}`\n"
-            result_text += f"*Decline Code:* `{decline_code}`\n"
-            result_text += f"*Message:* {error_message}\n\n"
-            result_text += f"*User:* {user_info}\n"
-            result_text += f"*Author:* {AUTHOR}\n"
-            result_text += f"*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            result_text += "━━━━━━━━━━━━━━━━━━━━━━"
-            
-            return False, result_text
+            return False, result
             
         elif isinstance(response_data, dict) and 'status' in response_data:
+            # Success
             payment_method = response_data.get('payment_method', {})
             card_info = payment_method.get('card', {}) if isinstance(payment_method, dict) else {}
             
-            result_text = f"✅ *SUCCESS!*\n\n"
-            result_text += f"*Card:* `{display_card}`\n"
-            result_text += f"*Status:* `{response_data.get('status', 'unknown')}`\n"
+            result = f"""✅ *SUCCESS!*
+
+*Card:* `{display_card}`
+*Status:* `{response_data.get('status', 'unknown')}`"""
             
             if isinstance(card_info, dict):
-                result_text += f"*Last 4:* `{card_info.get('last4', 'N/A')}`\n"
+                result += f"\n*Last 4:* `{card_info.get('last4', 'N/A')}`"
                 brand = card_info.get('brand', 'N/A')
-                result_text += f"*Brand:* `{brand.upper() if isinstance(brand, str) else 'N/A'}`\n"
-                result_text += f"*Country:* `{card_info.get('country', 'N/A')}`\n"
-            else:
-                result_text += "*Card Details:* Not available\n"
+                result += f"\n*Brand:* `{brand.upper() if isinstance(brand, str) else 'N/A'}`"
+                result += f"\n*Country:* `{card_info.get('country', 'N/A')}`"
             
-            result_text += f"\n*User:* {user_info}\n"
-            result_text += f"*Author:* {AUTHOR}\n"
-            result_text += f"*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            result_text += "━━━━━━━━━━━━━━━━━━━━━━"
+            result += f"""
+
+*User:* {user_info}
+*Author:* {AUTHOR}
+*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+━━━━━━━━━━━━━━━━━━━━━━"""
             
-            return True, result_text
+            return True, result
             
         else:
-            result_text = f"⚠️ *UNEXPECTED RESPONSE*\n\n"
-            result_text += f"*Card:* `{display_card}`\n"
-            result_text += f"*Response:* `{str(response_data)[:200]}`\n\n"
-            result_text += f"*User:* {user_info}\n"
-            result_text += f"*Author:* {AUTHOR}\n"
-            result_text += f"*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            result_text += "━━━━━━━━━━━━━━━━━━━━━━"
+            # Unexpected response
+            result = f"""⚠️ *UNEXPECTED RESPONSE*
+
+*Card:* `{display_card}`
+*Response:* `{str(response_data)[:200]}`
+
+*User:* {user_info}
+*Author:* {AUTHOR}
+*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+━━━━━━━━━━━━━━━━━━━━━━"""
             
-            return False, result_text
+            return False, result
             
     except Exception as e:
-        return False, f"❌ Error processing card: {str(e)[:200]}"
+        return False, f"❌ Error: {str(e)[:200]}"
 
-# Telegram handlers
+# ========== TELEGRAM HANDLERS ==========
 @bot.message_handler(commands=['start', 'help'])
 def start_command(message):
-    welcome_text = f"""🤖 *Card Processor Bot* | Author: {AUTHOR}
+    """Welcome message"""
+    welcome = f"""🤖 *Card Processor Bot*
+
+*Author:* {AUTHOR}
+*Server:* {YOUR_RENDER_URL}
 
 *Commands:*
-`/p CARD|MONTH|YEAR|CVV` - Process card
-`.p CARD|MONTH|YEAR|CVV` - Process card (dot command)
+`/p CARD|MM|YY|CVV` - Process card
+`.p CARD|MM|YY|CVV` - Process card (dot command)
 `/status` - Check bot status
-`/debug` - Test permissions
+`/debug` - Test connection
 
 *Format:* number|month|year|cvv
 *Example:* `/p 4242424242424242|01|26|000`
 """
-    bot.reply_to(message, welcome_text, parse_mode='Markdown')
+    bot.reply_to(message, welcome, parse_mode='Markdown')
 
-@bot.message_handler(commands=['debug'])
+@bot.message_handler(commands=['debug', 'test'])
 def debug_command(message):
+    """Debug connection"""
     user_info = f"@{message.from_user.username}" if message.from_user.username else f"User {message.from_user.id}"
-    debug_text = f"""🔧 *Debug Info*
+    debug_msg = f"""🔧 *Debug Info*
 
 *User:* {user_info}
 *Bot:* Online ✅
+*Server:* {YOUR_RENDER_URL}
 *Author:* {AUTHOR}
 *Time:* {datetime.now().strftime('%H:%M:%S')}
 
-Try `/p 4242424242424242|01|26|000`
+Try processing a test card!
 """
-    bot.reply_to(message, debug_text, parse_mode='Markdown')
+    bot.reply_to(message, debug_msg, parse_mode='Markdown')
 
 @bot.message_handler(commands=['status'])
 def status_command(message):
+    """Check bot status"""
     if current_setup_intent and setup_intent_creation_time:
         age = datetime.now() - setup_intent_creation_time
-        status_text = f"🔄 *Bot Status*\n\n*Setup Intent:* Active\n*Age:* {age.seconds}s\n*Author:* {AUTHOR}"
-    else:
-        status_text = f"❌ *No active Setup Intent*\nUse /p command to create one.\n\n*Author:* {AUTHOR}"
-    
-    bot.reply_to(message, status_text, parse_mode='Markdown')
+        status_msg = f"""🔄 *Bot Status*
 
-# Handle both .p and /p commands
+*Setup Intent:* Active
+*Created:* {setup_intent_creation_time.strftime('%H:%M:%S')}
+*Age:* {age.seconds} seconds
+*Author:* {AUTHOR}
+*Server:* {YOUR_RENDER_URL}"""
+    else:
+        status_msg = f"""❌ *No active Setup Intent*
+
+Use `/p` command to create one.
+*Author:* {AUTHOR}
+*Server:* {YOUR_RENDER_URL}"""
+    
+    bot.reply_to(message, status_msg, parse_mode='Markdown')
+
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
+    """Handle .p and /p commands"""
     text = message.text.strip()
     
+    # Check for card commands
     if text.startswith('.p ') or text.startswith('.P ') or text.startswith('/p ') or text.startswith('/P '):
         card_details = text[3:].strip()
         
+        # Validate format
         if '|' not in card_details or len(card_details.split('|')) != 4:
             bot.reply_to(message, "❌ Invalid format. Use: `/p 4242424242424242|01|26|000`", parse_mode='Markdown')
             return
         
+        # Get user info
         username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
         user_info = f"{username} ({message.from_user.id})"
         
         # Send processing message
         processing_msg = bot.reply_to(message, "🔄 *Processing card...*", parse_mode='Markdown')
         
-        # Process card
-        success, result = process_card(card_details, user_info)
+        # Process in background thread
+        def process_in_background():
+            success, result = process_card(card_details, user_info)
+            
+            # Delete processing message
+            try:
+                bot.delete_message(processing_msg.chat.id, processing_msg.message_id)
+            except:
+                pass
+            
+            # Send result
+            bot.reply_to(message, result, parse_mode='Markdown')
         
-        # Delete processing message and send result
-        try:
-            bot.delete_message(processing_msg.chat.id, processing_msg.message_id)
-        except:
-            pass
-        
-        bot.reply_to(message, result, parse_mode='Markdown')
+        # Start thread
+        thread = threading.Thread(target=process_in_background)
+        thread.start()
 
-# Flask routes
+# ========== FLASK ROUTES ==========
 @app.route('/')
 def home():
+    """Home page"""
     return f"""
     <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h1>🤖 Card Processor Bot</h1>
-            <p><strong>Status:</strong> Running ✅</p>
-            <p><strong>Author:</strong> {AUTHOR}</p>
-            <p><strong>Bot:</strong> @FAHIM0200's Card Processor</p>
-            <p>Find the bot on Telegram to use it.</p>
+        <head>
+            <title>🤖 Card Processor Bot</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background: #f5f5f5;
+                }}
+                .container {{
+                    background: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                h1 {{ color: #333; }}
+                .status {{ 
+                    color: #28a745; 
+                    font-weight: bold;
+                    font-size: 18px;
+                }}
+                .info {{ 
+                    background: #e9ecef; 
+                    padding: 15px; 
+                    border-radius: 5px; 
+                    margin: 15px 0;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🤖 Card Processor Bot</h1>
+                <p class="status">✅ Online & Running</p>
+                
+                <div class="info">
+                    <p><strong>Author:</strong> {AUTHOR}</p>
+                    <p><strong>Server:</strong> {YOUR_RENDER_URL}</p>
+                    <p><strong>Telegram Bot:</strong> @FAHIM0200</p>
+                </div>
+                
+                <h3>📱 How to use:</h3>
+                <ol>
+                    <li>Open Telegram</li>
+                    <li>Find the bot</li>
+                    <li>Send: <code>/p 4242424242424242|01|26|000</code></li>
+                </ol>
+                
+                <p><em>Bot processes cards through Stripe APIs in real-time.</em></p>
+            </div>
         </body>
     </html>
     """
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    """Telegram webhook endpoint"""
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
@@ -332,22 +415,41 @@ def webhook():
         return ''
     return 'Bad request', 400
 
-# Main
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return {'status': 'healthy', 'author': AUTHOR, 'server': YOUR_RENDER_URL}, 200
+
+# ========== MAIN ==========
 if __name__ == '__main__':
-    print("🤖 Starting Card Processor Bot...")
-    print(f"👤 Author: {AUTHOR}")
+    print("=" * 50)
+    print("🤖 Card Processor Bot")
+    print("=" * 50)
+    print(f"Author: {AUTHOR}")
+    print(f"Server: {YOUR_RENDER_URL}")
+    print(f"Bot Token: {BOT_TOKEN[:10]}...")
+    print("=" * 50)
     
-    # Remove any existing webhook
-    bot.remove_webhook()
+    # Auto-set webhook for Render
+    try:
+        # Remove any existing webhook
+        bot.remove_webhook()
+        
+        # Set new webhook
+        webhook_url = f"{YOUR_RENDER_URL}/webhook"
+        bot.set_webhook(url=webhook_url)
+        print(f"✅ Webhook set to: {webhook_url}")
+        
+        # Test webhook
+        webhook_info = bot.get_webhook_info()
+        print(f"📡 Webhook info: {webhook_info.url}")
+    except Exception as e:
+        print(f"⚠️ Webhook setup failed: {e}")
+        print("📝 Set webhook manually:")
+        print(f"curl 'https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={YOUR_RENDER_URL}/webhook'")
     
-    # Get port for Render
+    print("🚀 Bot is starting...")
+    
+    # Start Flask server
     port = int(os.getenv("PORT", 5000))
-    
-    # Note: Webhook will be set after deployment
-    # You'll set it manually once you get your Render URL
-    
-    print(f"🌐 Server running on port {port}")
-    print("✅ Bot is ready!")
-    
-    # Start Flask app
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
