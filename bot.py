@@ -218,11 +218,11 @@ def process_card(card_details, user_info):
 *Card:* `{display_card}`
 *Status:* `{response_data.get('status', 'unknown')}`"""
             
-            if isinstance(card_info, dict):
-                result += f"\n*Last 4:* `{card_info.get('last4', 'N/A')}`"
-                brand = card_info.get('brand', 'N/A')
-                result += f"\n*Brand:* `{brand.upper() if isinstance(brand, str) else 'N/A'}`"
-                result += f"\n*Country:* `{card_info.get('country', 'N/A')}`"
+          #  if isinstance(card_info, dict):
+              #  result += f"\n*Last 4:* `{card_info.get('last4', 'N/A')}`"
+              #  brand = card_info.get('brand', 'N/A')
+             #   result += f"\n*Brand:* `{brand.upper() if isinstance(brand, str) else 'N/A'}`"
+             #   result += f"\n*Country:* `{card_info.get('country', 'N/A')}`"
             
             result += f"""
 
@@ -333,10 +333,10 @@ def handle_all_messages(message):
             success, result = process_card(card_details, user_info)
             
             # Delete processing message
-            try:
-                bot.delete_message(processing_msg.chat.id, processing_msg.message_id)
-            except:
-                pass
+           # try:
+           #     bot.delete_message(processing_msg.chat.id, processing_msg.message_id)
+         #   except:
+            #    pass
             
             # Send result
             bot.reply_to(message, result, parse_mode='Markdown')
