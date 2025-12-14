@@ -333,10 +333,10 @@ def handle_all_messages(message):
             success, result = process_card(card_details, user_info)
             
             # Delete processing message
-           # try:
-           #     bot.delete_message(processing_msg.chat.id, processing_msg.message_id)
-         #   except:
-            #    pass
+            try:
+                bot.delete_message(processing_msg.chat.id, processing_msg.message_id)
+            except:
+                pass
             
             # Send result
             bot.reply_to(message, result, parse_mode='Markdown')
